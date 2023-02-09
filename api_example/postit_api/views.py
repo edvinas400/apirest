@@ -4,6 +4,7 @@ from .models import *
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from .serializers import *
+from django.contrib.auth.models import User
 
 class AlbumList(generics.ListAPIView):
     queryset = Album.objects.all()
@@ -36,24 +37,36 @@ class AlbumReviewDetail(generics.RetrieveUpdateDestroyAPIView):
             raise ValidationError('Negalima koreguoti svetimų pranešimų!')
 
 class AlbumReviewLikeCreate(generics.CreateAPIView, mixins.DestroyModelMixin):
-        serializer_class = AlbumReviewLikeSerializer
-        permission_classes = [permissions.IsAuthenticated]
+    serializer_class = AlbumReviewLikeSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-        def get_queryset(self):
-            user = self.request.user
+    def get_queryset(self):
+        user = self.request.user
+        review = AlbumReview.objects.get(pk=self.kwargs['pk'])
+        return AlbumReviewLike.objects.filter(review=review, user=user)
+
+    def perform_create(self, serializer):
+        if self.get_queryset().exists():
+            raise ValidationError('Jūs jau palikote patiktuką šiam pranešimui!')
+        else:
             review = AlbumReview.objects.get(pk=self.kwargs['pk'])
-            return AlbumReviewLike.objects.filter(review=review, user=user)
+            serializer.save(user=self.request.user, review=review)
 
-        def perform_create(self, serializer):
-            if self.get_queryset().exists():
-                raise ValidationError('Jūs jau palikote patiktuką šiam pranešimui!')
-            else:
-                review = AlbumReview.objects.get(pk=self.kwargs['pk'])
-                serializer.save(user=self.request.user, review=review)
+    def delete(self, request, *args, **kwargs):
+        if self.get_queryset().exists():
+            self.get_queryset().delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            raise ValidationError('Jūs nepalikote patiktuko po šiuo pranešimu!')
 
-        def delete(self, request, *args, **kwargs):
-            if self.get_queryset().exists():
-                self.get_queryset().delete()
-                return Response(status=status.HTTP_204_NO_CONTENT)
-            else:
-                raise ValidationError('Jūs nepalikote patiktuko po šiuo pranešimu!')
+class UserCreate(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = (permissions.AllowAny,)
+    def delete(self, request, *args, **kwargs):
+        user = User.objects.filter(pk=self.request.user.pk)
+        if user.exists():
+            user.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            raise ValidationError('User doesn\'t exist.')
